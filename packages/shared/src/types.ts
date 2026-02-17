@@ -119,6 +119,7 @@ export interface ReactionMatrix {
   reaction_type: string;
   probability: number;
   cooldown_sec: number;
+  last_fired_at: string | null;
   created_at: string;
 }
 

@@ -5,12 +5,22 @@ import { config } from '../lib/config.js';
 import { stepQueue } from '../lib/queue.js';
 import { getExecutor } from '../executors/registry.js';
 import { recordUsage } from '../services/cost-tracker.js';
+import { emitEvent } from '../services/event-service.js';
 import type { MissionStep } from '../types/index.js';
 
 interface StepJobData {
   stepId: string;
   missionId: string;
   kind: string;
+}
+
+async function getAgentIdForMission(missionId: string): Promise<string | null> {
+  const { data: mission } = await supabase
+    .from('missions').select('proposal_id').eq('id', missionId).single();
+  if (!mission) return null;
+  const { data: proposal } = await supabase
+    .from('proposals').select('agent_id').eq('id', (mission as { proposal_id: string }).proposal_id).single();
+  return proposal ? (proposal as { agent_id: string }).agent_id : null;
 }
 
 async function processStep(job: Job<StepJobData>): Promise<void> {
@@ -44,6 +54,8 @@ async function processStep(job: Job<StepJobData>): Promise<void> {
   if (arErr) throw arErr;
 
   const executor = getExecutor(kind);
+  const agentId = await getAgentIdForMission(missionId);
+
   try {
     const result = await executor.execute(step as MissionStep);
     const now = new Date().toISOString();
@@ -56,57 +68,48 @@ async function processStep(job: Job<StepJobData>): Promise<void> {
     }).eq('id', (actionRun as { id: string }).id);
 
     if (result.success) {
-      // Mark step succeeded
       await supabase.from('mission_steps').update({
         status: 'succeeded',
         result: result.output as Record<string, unknown>,
         completed_at: now,
       }).eq('id', stepId);
       log(`Step ${stepId} succeeded`);
+
+      // Emit step.completed event
+      if (agentId) {
+        await emitEvent(agentId, 'step.completed', ['step', 'succeeded', kind], {
+          step_id: stepId,
+          mission_id: missionId,
+          kind,
+        });
+      }
     } else {
       throw new Error('Executor returned success=false');
     }
 
     // Record cost
-    if (result.tokensUsed || result.costUsd) {
-      // Get agent_id from mission → proposal
-      const { data: mission } = await supabase
-        .from('missions').select('proposal_id').eq('id', missionId).single();
-      if (mission) {
-        const { data: proposal } = await supabase
-          .from('proposals').select('agent_id').eq('id', (mission as { proposal_id: string }).proposal_id).single();
-        if (proposal) {
-          await recordUsage(
-            (proposal as { agent_id: string }).agent_id,
-            result.tokensUsed || 0,
-            0,
-            result.costUsd || 0,
-          );
-        }
-      }
+    if ((result.tokensUsed || result.costUsd) && agentId) {
+      await recordUsage(agentId, result.tokensUsed || 0, 0, result.costUsd || 0);
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     const now = new Date().toISOString();
     log(`Step ${stepId} failed: ${errorMsg}`);
 
-    // Update action_run with error
     await supabase.from('action_runs').update({
       finished_at: now,
       error: errorMsg,
     }).eq('id', (actionRun as { id: string }).id);
 
-    // Check retry
     const currentStep = step as MissionStep;
     const retryCount = (currentStep.retry_count || 0) + 1;
     const maxRetries = currentStep.max_retries || 3;
 
     if (retryCount < maxRetries) {
-      // Re-enqueue with backoff
       const delay = Math.min(
         config.retryBaseDelayMs * Math.pow(2, retryCount),
         config.retryMaxDelayMs,
-      ) + Math.random() * 1000; // jitter
+      ) + Math.random() * 1000;
 
       await supabase.from('mission_steps').update({
         status: 'queued',
@@ -118,7 +121,6 @@ async function processStep(job: Job<StepJobData>): Promise<void> {
       await stepQueue.add('execute-step', job.data, { delay: Math.round(delay) });
       log(`Step ${stepId} re-enqueued (retry ${retryCount}/${maxRetries}, delay ${Math.round(delay)}ms)`);
     } else {
-      // Retries exhausted
       await supabase.from('mission_steps').update({
         status: 'failed',
         retry_count: retryCount,
@@ -126,10 +128,19 @@ async function processStep(job: Job<StepJobData>): Promise<void> {
         completed_at: now,
       }).eq('id', stepId);
       log(`Step ${stepId} permanently failed after ${retryCount} retries`);
+
+      // Emit step.failed event
+      if (agentId) {
+        await emitEvent(agentId, 'step.failed', ['step', 'failed', kind], {
+          step_id: stepId,
+          mission_id: missionId,
+          kind,
+          error: errorMsg,
+        });
+      }
     }
   }
 
-  // Check mission completion
   await finalizeMissionIfDone(missionId);
 }
 
@@ -153,20 +164,13 @@ async function finalizeMissionIfDone(missionId: string): Promise<void> {
     completed_at: now,
   }).eq('id', missionId);
 
-  // Emit agent_event
-  const { data: mission } = await supabase
-    .from('missions').select('proposal_id').eq('id', missionId).single();
-  if (mission) {
-    const { data: proposal } = await supabase
-      .from('proposals').select('agent_id').eq('id', (mission as { proposal_id: string }).proposal_id).single();
-    if (proposal) {
-      await supabase.from('agent_events').insert({
-        agent_id: (proposal as { agent_id: string }).agent_id,
-        event_type: `mission.${finalStatus}`,
-        tags: ['mission', finalStatus],
-        payload: { mission_id: missionId, status: finalStatus },
-      });
-    }
+  // Emit mission event via event-service (triggers + reactions will be evaluated)
+  const agentId = await getAgentIdForMission(missionId);
+  if (agentId) {
+    await emitEvent(agentId, `mission.${finalStatus}`, ['mission', finalStatus], {
+      mission_id: missionId,
+      status: finalStatus,
+    });
   }
 
   console.log(`[worker] Mission ${missionId} finalized as ${finalStatus}`);

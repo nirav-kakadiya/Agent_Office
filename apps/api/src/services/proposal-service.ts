@@ -2,6 +2,8 @@ import { supabase } from '../lib/supabase.js';
 import type { CreateProposalInput, Proposal, CapGate } from '../types/index.js';
 import { createMission } from './mission-service.js';
 import { enqueueStepsForMission } from './enqueue-steps.js';
+import { evaluateApproval } from './approval-service.js';
+import { emitEvent } from './event-service.js';
 
 // ── Cap Gate Check ──
 async function checkCapGates(steps: Array<{ kind: string }>): Promise<{ allowed: boolean; blocked_by?: string }> {
@@ -20,25 +22,25 @@ async function checkCapGates(steps: Array<{ kind: string }>): Promise<{ allowed:
       ? new Date(Date.now() - 3600_000).toISOString()
       : new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
 
-    const { count, error: cErr } = await supabase
-      .from('action_runs')
-      .select('id', { count: 'exact', head: true })
-      .gte('started_at', windowStart)
-      .eq('step_id', gate.step_kind); // simplified; real impl joins on step kind
+    // Get step IDs matching the kind, then count action_runs
+    const { data: stepIds } = await supabase
+      .from('mission_steps')
+      .select('id')
+      .eq('kind', gate.step_kind);
 
-    if (cErr) throw cErr;
-    if ((count || 0) >= gate.limit_value) {
-      return { allowed: false, blocked_by: `${gate.step_kind}:${gate.gate_type} limit ${gate.limit_value}/${gate.window}` };
+    if (stepIds && stepIds.length > 0) {
+      const { count, error: countErr } = await supabase
+        .from('action_runs')
+        .select('id', { count: 'exact', head: true })
+        .gte('started_at', windowStart)
+        .in('step_id', stepIds.map((s: { id: string }) => s.id));
+      if (countErr) throw countErr;
+      if ((count || 0) >= gate.limit_value) {
+        return { allowed: false, blocked_by: `${gate.step_kind}:${gate.gate_type} limit ${gate.limit_value}/${gate.window}` };
+      }
     }
   }
   return { allowed: true };
-}
-
-// ── Auto-approve heuristic ──
-function shouldAutoApprove(input: CreateProposalInput): boolean {
-  // Simple policy: auto-approve if source is 'trigger' or 'reaction'
-  // API proposals go to pending for review
-  return input.source === 'trigger' || input.source === 'reaction';
 }
 
 // ── Main Pipeline ──
@@ -51,9 +53,9 @@ export async function submitProposal(input: CreateProposalInput) {
     return { ok: false as const, reason: `Blocked by cap gate: ${gateResult.blocked_by}` };
   }
 
-  // 2. Determine status
-  const autoApprove = shouldAutoApprove(input);
-  const status = autoApprove ? 'approved' : 'pending';
+  // 2. Determine status via approval service
+  const decision = await evaluateApproval(input);
+  const status = decision.status;
 
   // 3. Insert proposal
   const { data: proposal, error } = await supabase
@@ -78,10 +80,18 @@ export async function submitProposal(input: CreateProposalInput) {
     old_status: null,
     new_status: status,
     changed_by: 'system',
-    reason: autoApprove ? 'auto-approved' : null,
+    reason: decision.reason,
   });
 
-  // 5. If approved, create mission + steps + enqueue
+  // 5. Emit proposal created event
+  await emitEvent(p.agent_id, 'proposal.created', ['proposal', status], {
+    proposal_id: p.id,
+    title: p.title,
+    status,
+    source: p.source,
+  });
+
+  // 6. If approved, create mission + steps + enqueue
   let mission = null;
   if (status === 'approved' && steps.length > 0) {
     mission = await createMission(p.id, 0, steps);
@@ -123,5 +133,24 @@ export async function updateProposalStatus(id: string, newStatus: string, change
     reason: reason || null,
   });
 
-  return data as Proposal;
+  const updated = data as Proposal;
+
+  // Emit status change event
+  const eventType = newStatus === 'approved' ? 'proposal.approved' : newStatus === 'rejected' ? 'proposal.rejected' : 'proposal.updated';
+  await emitEvent(updated.agent_id, eventType, ['proposal', newStatus], {
+    proposal_id: id,
+    old_status: old.status,
+    new_status: newStatus,
+  });
+
+  // If just approved and has steps in metadata, create mission
+  if (newStatus === 'approved' && old.status !== 'approved') {
+    const steps = (updated.metadata as { steps?: Array<{ kind: string; config: Record<string, unknown> }> }).steps;
+    if (steps && steps.length > 0) {
+      const mission = await createMission(id, 0, steps);
+      await enqueueStepsForMission((mission as { id: string }).id);
+    }
+  }
+
+  return updated;
 }
