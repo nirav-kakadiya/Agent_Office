@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase.js';
 import type { CreateProposalInput, Proposal, CapGate } from '../types/index.js';
 import { createMission } from './mission-service.js';
+import { enqueueStepsForMission } from './enqueue-steps.js';
 
 // ── Cap Gate Check ──
 async function checkCapGates(steps: Array<{ kind: string }>): Promise<{ allowed: boolean; blocked_by?: string }> {
@@ -80,10 +81,11 @@ export async function submitProposal(input: CreateProposalInput) {
     reason: autoApprove ? 'auto-approved' : null,
   });
 
-  // 5. If approved, create mission + steps
+  // 5. If approved, create mission + steps + enqueue
   let mission = null;
   if (status === 'approved' && steps.length > 0) {
     mission = await createMission(p.id, 0, steps);
+    await enqueueStepsForMission((mission as { id: string }).id);
   }
 
   return { ok: true as const, proposal: p, mission };

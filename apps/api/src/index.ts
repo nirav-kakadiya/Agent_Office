@@ -5,6 +5,9 @@ import { missionRoutes } from './routes/missions.js';
 import { agentRoutes } from './routes/agents.js';
 import { policyRoutes } from './routes/policies.js';
 import { heartbeatRoutes } from './routes/heartbeat.js';
+import { workerRoutes } from './routes/workers.js';
+import { startStepWorker } from './workers/step-worker.js';
+import { startStaleRecovery } from './workers/stale-recovery.js';
 
 const app = Fastify({ logger: true });
 
@@ -14,6 +17,21 @@ app.register(missionRoutes, { prefix: '/api' });
 app.register(agentRoutes, { prefix: '/api' });
 app.register(policyRoutes, { prefix: '/api' });
 app.register(heartbeatRoutes, { prefix: '/api' });
+app.register(workerRoutes, { prefix: '/api' });
+
+// Start worker pool + stale recovery
+const worker = startStepWorker();
+const staleInterval = startStaleRecovery();
+
+// Graceful shutdown
+const shutdown = async () => {
+  app.log.info('Shutting down...');
+  clearInterval(staleInterval);
+  await worker.close();
+  process.exit(0);
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
 app.listen({ port: config.port, host: '0.0.0.0' }, (err, address) => {
   if (err) {
