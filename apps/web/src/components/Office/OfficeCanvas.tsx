@@ -446,7 +446,7 @@ function drawField(g: InstanceType<PixiMod['Graphics']>, x: number, y: number, w
   // Terrain features on map
   g.circle(x + 45, y + 35, 8).fill({ color: 0x44aa44, alpha: 0.4 });
   g.circle(x + 70, y + 50, 6).fill({ color: 0x44aa44, alpha: 0.3 });
-  g.moveTo(x + 55, y + 25).lineTo(x + 65, y + 20).lineTo(x + 75, y + 30).stroke({ color: 0x8866444, width: 1 });
+  g.moveTo(x + 55, y + 25).lineTo(x + 65, y + 20).lineTo(x + 75, y + 30).stroke({ color: 0x886644, width: 1 });
   // Pin on map
   g.circle(x + 60, y + 40, 3).fill(0xff3333);
 
