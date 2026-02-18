@@ -35,12 +35,14 @@ export async function emitEvent(
   return event;
 }
 
-export async function listEvents(opts: { agentId?: string; eventType?: string; limit?: number } = {}) {
+export async function listEvents(opts: { agentId?: string; eventType?: string; limit?: number; offset?: number } = {}) {
+  const limit = opts.limit || 50;
+  const offset = opts.offset || 0;
   let q = supabase
     .from('agent_events')
-    .select('*')
+    .select('id, agent_id, event_type, tags, payload, created_at')
     .order('created_at', { ascending: false })
-    .limit(opts.limit || 50);
+    .range(offset, offset + limit - 1);
 
   if (opts.agentId) q = q.eq('agent_id', opts.agentId);
   if (opts.eventType) q = q.eq('event_type', opts.eventType);

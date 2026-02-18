@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { apiFetch } from '@/lib/api';
 
 export interface MetricsOverview {
@@ -29,28 +29,59 @@ export interface TimelineData {
   eventCount: number;
 }
 
-export function useMetricsOverview() {
-  const [data, setData] = useState<MetricsOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+// Simple SWR-like cache for metrics
+const swrCache = new Map<string, { data: unknown; fetchedAt: number }>();
 
-  const fetch = useCallback(async () => {
+function useSWR<T>(key: string, fetcher: () => Promise<T>, staleMs: number, refreshMs: number) {
+  const [data, setData] = useState<T | null>(() => {
+    const entry = svrCacheGet<T>(key);
+    return entry;
+  });
+  const [loading, setLoading] = useState(data === null);
+  const mountedRef = useRef(true);
+
+  const doFetch = useCallback(async () => {
     try {
-      const result = await apiFetch<MetricsOverview>('/metrics/overview');
-      setData(result);
+      const result = await fetcher();
+      swrCache.set(key, { data: result, fetchedAt: Date.now() });
+      if (mountedRef.current) {
+        setData(result);
+        setLoading(false);
+      }
     } catch (e) {
-      console.error('Failed to fetch metrics overview:', e);
-    } finally {
-      setLoading(false);
+      console.error(`Failed to fetch ${key}:`, e);
+      if (mountedRef.current) setLoading(false);
     }
-  }, []);
+  }, [key, fetcher]);
 
   useEffect(() => {
-    fetch();
-    const interval = setInterval(fetch, 60000); // 60s refresh (was 15s)
-    return () => clearInterval(interval);
-  }, [fetch]);
+    mountedRef.current = true;
+    // Show stale data immediately, refresh in background
+    const cached = svrCacheGet<T>(key);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    }
+    doFetch();
+    const interval = setInterval(doFetch, refreshMs);
+    return () => {
+      mountedRef.current = false;
+      clearInterval(interval);
+    };
+  }, [key, doFetch, refreshMs]);
 
-  return { data, loading, refresh: fetch };
+  return { data, loading, refresh: doFetch };
+}
+
+function svrCacheGet<T>(key: string): T | null {
+  const entry = swrCache.get(key);
+  if (!entry) return null;
+  return entry.data as T;
+}
+
+export function useMetricsOverview() {
+  const fetcher = useCallback(() => apiFetch<MetricsOverview>('/metrics/overview'), []);
+  return useSWR('metrics:overview', fetcher, 30_000, 60_000);
 }
 
 export function useAgentMetrics(agentId: string | null) {
@@ -70,33 +101,19 @@ export function useAgentMetrics(agentId: string | null) {
 }
 
 export function useCostData(from?: string, to?: string) {
-  const [data, setData] = useState<CostData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
+  const key = `metrics:costs:${from || ''}:${to || ''}`;
+  const fetcher = useCallback(() => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const qs = params.toString();
-    apiFetch<CostData>(`/metrics/costs${qs ? '?' + qs : ''}`)
-      .then(setData)
-      .catch((e) => console.error('Failed to fetch cost data:', e))
-      .finally(() => setLoading(false));
+    return apiFetch<CostData>(`/metrics/costs${qs ? '?' + qs : ''}`);
   }, [from, to]);
-
-  return { data, loading };
+  return useSWR(key, fetcher, 60_000, 120_000);
 }
 
 export function useTimelineData(days = 30) {
-  const [data, setData] = useState<TimelineData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    apiFetch<TimelineData>(`/metrics/timeline?days=${days}`)
-      .then(setData)
-      .catch((e) => console.error('Failed to fetch timeline:', e))
-      .finally(() => setLoading(false));
-  }, [days]);
-
-  return { data, loading };
+  const key = `metrics:timeline:${days}`;
+  const fetcher = useCallback(() => apiFetch<TimelineData>(`/metrics/timeline?days=${days}`), [days]);
+  return useSWR(key, fetcher, 60_000, 120_000);
 }

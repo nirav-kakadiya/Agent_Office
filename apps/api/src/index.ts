@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import compress from '@fastify/compress';
 import { config } from './lib/config.js';
 import { proposalRoutes } from './routes/proposals.js';
 import { missionRoutes } from './routes/missions.js';
@@ -15,8 +16,13 @@ import { healthRoutes } from './routes/health.js';
 import { registerRequestId } from './lib/logger.js';
 import { startStepWorker } from './workers/step-worker.js';
 import { startStaleRecovery } from './workers/stale-recovery.js';
+import { flushEvents } from './lib/batch-events.js';
+import { flushOfficeStateUpdates } from './lib/debounced-state.js';
 
 const app = Fastify({ logger: true });
+
+// Compression
+app.register(compress, { global: true });
 
 // Request ID middleware
 registerRequestId(app);
@@ -43,7 +49,7 @@ const staleInterval = startStaleRecovery();
 const shutdown = async () => {
   app.log.info('Shutting down...');
   clearInterval(staleInterval);
-  await worker.close();
+  await Promise.all([worker.close(), flushEvents(), flushOfficeStateUpdates()]);
   process.exit(0);
 };
 process.on('SIGTERM', shutdown);

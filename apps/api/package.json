@@ -11,9 +11,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "fastify": "^5.2.0",
+    "@agent-office/shared": "workspace:*",
+    "@fastify/compress": "^8.3.1",
     "@supabase/supabase-js": "^2.49.0",
-    "@agent-office/shared": "workspace:*"
+    "fastify": "^5.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

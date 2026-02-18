@@ -37,6 +37,7 @@ export async function agentRoutes(app: FastifyInstance) {
       .single();
     if (error) throw error;
     invalidateCache('agents:');
+    invalidateCache('metrics:');
     return data;
   });
 }
