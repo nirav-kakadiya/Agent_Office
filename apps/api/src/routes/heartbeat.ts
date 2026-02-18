@@ -20,5 +20,4 @@ export async function heartbeatRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 }

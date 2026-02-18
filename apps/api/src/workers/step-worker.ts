@@ -6,6 +6,7 @@ import { stepQueue } from '../lib/queue.js';
 import { getExecutor } from '../executors/registry.js';
 import { recordUsage } from '../services/cost-tracker.js';
 import { emitEvent } from '../services/event-service.js';
+import { alertRetryExhausted, alertMissionFailureRate } from '../services/alert-service.js';
 import type { MissionStep } from '../types/index.js';
 
 interface StepJobData {
@@ -128,6 +129,7 @@ async function processStep(job: Job<StepJobData>): Promise<void> {
         completed_at: now,
       }).eq('id', stepId);
       log(`Step ${stepId} permanently failed after ${retryCount} retries`);
+      await alertRetryExhausted(stepId, missionId, kind, retryCount);
 
       // Emit step.failed event
       if (agentId) {
@@ -174,6 +176,16 @@ async function finalizeMissionIfDone(missionId: string): Promise<void> {
   }
 
   console.log(`[worker] Mission ${missionId} finalized as ${finalStatus}`);
+
+  // Check mission failure rate for alerts
+  if (finalStatus === 'failed') {
+    const { data: recentMissions } = await supabase
+      .from('missions').select('status').order('created_at', { ascending: false }).limit(20);
+    if (recentMissions && recentMissions.length > 0) {
+      const failed = recentMissions.filter((m: { status: string }) => m.status === 'failed').length;
+      await alertMissionFailureRate(failed, recentMissions.length, config.missionFailureRateThreshold);
+    }
+  }
 }
 
 export function startStepWorker(): Worker<StepJobData> {

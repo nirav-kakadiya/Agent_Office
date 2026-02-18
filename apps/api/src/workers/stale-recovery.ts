@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase.js';
 import { stepQueue } from '../lib/queue.js';
 import { config } from '../lib/config.js';
+import { alertStaleMissions } from '../services/alert-service.js';
 
 export function startStaleRecovery(): ReturnType<typeof setInterval> {
   const interval = setInterval(async () => {
@@ -19,6 +20,7 @@ export function startStaleRecovery(): ReturnType<typeof setInterval> {
       if (!staleSteps || staleSteps.length === 0) return;
 
       console.log(`[stale-recovery] Found ${staleSteps.length} stale step(s), re-queuing...`);
+      await alertStaleMissions(staleSteps.length);
       for (const step of staleSteps as Array<{ id: string; mission_id: string; kind: string }>) {
         await supabase.from('mission_steps').update({
           status: 'queued',

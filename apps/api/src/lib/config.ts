@@ -8,4 +8,7 @@ export const config = {
   staleStepTimeoutMs: parseInt(process.env.STALE_STEP_TIMEOUT_MS || '300000', 10), // 5 min
   retryBaseDelayMs: parseInt(process.env.RETRY_BASE_DELAY_MS || '1000', 10),
   retryMaxDelayMs: parseInt(process.env.RETRY_MAX_DELAY_MS || '60000', 10),
+  alertWebhookUrl: process.env.ALERT_WEBHOOK_URL || '',
+  dailyBudgetUsd: parseFloat(process.env.DAILY_BUDGET_USD || '10'),
+  missionFailureRateThreshold: parseFloat(process.env.MISSION_FAILURE_RATE_THRESHOLD || '0.3'),
 } as const;

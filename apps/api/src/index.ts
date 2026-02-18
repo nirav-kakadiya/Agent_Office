@@ -11,12 +11,18 @@ import { reactionRoutes } from './routes/reactions.js';
 import { capGateRoutes } from './routes/cap-gates.js';
 import { eventRoutes } from './routes/events.js';
 import { metricsRoutes } from './routes/metrics.js';
+import { healthRoutes } from './routes/health.js';
+import { registerRequestId } from './lib/logger.js';
 import { startStepWorker } from './workers/step-worker.js';
 import { startStaleRecovery } from './workers/stale-recovery.js';
 
 const app = Fastify({ logger: true });
 
+// Request ID middleware
+registerRequestId(app);
+
 // Register routes
+app.register(healthRoutes, { prefix: '/api' });
 app.register(proposalRoutes, { prefix: '/api' });
 app.register(missionRoutes, { prefix: '/api' });
 app.register(agentRoutes, { prefix: '/api' });
