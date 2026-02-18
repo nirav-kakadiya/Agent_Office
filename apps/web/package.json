@@ -2,6 +2,28 @@
   "name": "@agent-office/web",
   "version": "0.0.1",
   "private": true,
-  "scripts": {},
-  "dependencies": {}
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@agent-office/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.49.0",
+    "next": "^14.2.0",
+    "pixi.js": "^8.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.4.0"
+  }
 }

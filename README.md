@@ -5,7 +5,7 @@ A multi-agent autonomous system with a pixel-art office dashboard. Agents propos
 ## Architecture
 
 - **apps/api** — Fastify API server (proposals → missions → steps pipeline)
-- **apps/web** — Next.js pixel-art dashboard (coming soon)
+- **apps/web** — Next.js 14 pixel-art dashboard with PixiJS canvas and Supabase Realtime
 - **packages/shared** — Shared TypeScript types
 - **packages/db** — Database migrations (Supabase/Postgres)
 
