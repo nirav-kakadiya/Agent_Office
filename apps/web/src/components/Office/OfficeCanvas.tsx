@@ -182,7 +182,7 @@ export default function OfficeCanvas({ agents, onAgentClick }: Props) {
       <div
         ref={containerRef}
         className="rounded-lg overflow-hidden border border-office-border"
-        style={{ width: CANVAS_W, maxWidth: '100%', imageRendering: 'pixelated' }}
+        style={{ width: CANVAS_W, height: CANVAS_H, maxWidth: '100%', imageRendering: 'pixelated' }}
       />
       {/* Scanline overlay */}
       <div
