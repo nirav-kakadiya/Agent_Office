@@ -10,6 +10,7 @@ import { triggerRoutes } from './routes/triggers.js';
 import { reactionRoutes } from './routes/reactions.js';
 import { capGateRoutes } from './routes/cap-gates.js';
 import { eventRoutes } from './routes/events.js';
+import { metricsRoutes } from './routes/metrics.js';
 import { startStepWorker } from './workers/step-worker.js';
 import { startStaleRecovery } from './workers/stale-recovery.js';
 
@@ -26,6 +27,7 @@ app.register(triggerRoutes, { prefix: '/api' });
 app.register(reactionRoutes, { prefix: '/api' });
 app.register(capGateRoutes, { prefix: '/api' });
 app.register(eventRoutes, { prefix: '/api' });
+app.register(metricsRoutes, { prefix: '/api' });
 
 // Start worker pool + stale recovery
 const worker = startStepWorker();

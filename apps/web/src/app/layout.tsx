@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/', label: '🏠 Office' },
   { href: '/missions', label: '📋 Missions' },
   { href: '/agents', label: '🤖 Agents' },
+  { href: '/dashboard', label: '📊 Metrics' },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
