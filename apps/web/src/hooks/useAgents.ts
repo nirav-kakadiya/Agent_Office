@@ -11,20 +11,22 @@ export interface AgentFull {
   office: OfficeState | null;
 }
 
+type AgentWithJoins = Agent & { agent_affect: AgentAffect[]; office_state: OfficeState[] };
+
 export function useAgents() {
   const [agents, setAgents] = useState<Record<string, AgentFull>>({});
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     try {
-      const list = await apiFetch<Agent[]>('/agents');
+      // Single API call — returns agents with affect + office joined
+      const list = await apiFetch<AgentWithJoins[]>('/agents');
       const map: Record<string, AgentFull> = {};
       for (const a of list) {
-        const detail = await apiFetch<Agent & { agent_affect: AgentAffect[]; office_state: OfficeState[] }>(`/agents/${a.id}`);
         map[a.id] = {
           agent: a,
-          affect: detail.agent_affect?.[0] ?? null,
-          office: detail.office_state?.[0] ?? null,
+          affect: a.agent_affect?.[0] ?? null,
+          office: a.office_state?.[0] ?? null,
         };
       }
       setAgents(map);
@@ -38,6 +40,7 @@ export function useAgents() {
   useEffect(() => {
     fetchAll();
 
+    // Single realtime channel for all agent-related changes
     const channel = supabase
       .channel('agents-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, (payload) => {

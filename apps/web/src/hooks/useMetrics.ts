@@ -46,7 +46,7 @@ export function useMetricsOverview() {
 
   useEffect(() => {
     fetch();
-    const interval = setInterval(fetch, 15000);
+    const interval = setInterval(fetch, 60000); // 60s refresh (was 15s)
     return () => clearInterval(interval);
   }, [fetch]);
 
